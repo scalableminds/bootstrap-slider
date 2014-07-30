@@ -596,6 +596,7 @@
 			this.element
 				.prop('value', JSON.stringify(slideEventValue))
 				.data('value', this.value);
+				
 			if (originalEvent) {
 				this.element
 					.trigger({

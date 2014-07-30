@@ -3,9 +3,7 @@
   "version": "3.0.1",
   "dependencies": {
     "jquery": "",
-    "bootstrap": "",
-    "modernizr": "",
-    "jquery-bridget": ""
+    "bootstrap": ""
   },
   "homepage": "https://github.com/scalableminds/bootstrap-slider",
   "authors": [
