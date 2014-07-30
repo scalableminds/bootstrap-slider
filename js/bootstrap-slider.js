@@ -17,6 +17,17 @@
 
 (function( $ ) {
 
+	(function($){
+		var originalVal = $.fn.val;
+		$.fn.val = function(){
+			var result = originalVal.apply(this, arguments);
+			if (arguments.length > 0) {
+				$(this).trigger('val-change');
+			}
+			return result;
+		};
+	})($);
+
 	var ErrorMsgs = {
 		formatInvalidInputErrorMsg : function(input) {
 			return "Invalid input value '" + input + "' passed in";
@@ -31,6 +42,12 @@
 		var updateSlider = false;
 		var parent = this.element.parent();
 
+		$(element).on('val-change', $.proxy(function () {
+			try {
+				var value = $(element).val() || 0;
+				this.setValue(JSON.parse(value));
+			} catch (e) {}
+		}, this));
 
 		if (parent.hasClass('slider') === true) {
 			updateSlider = true;
@@ -39,8 +56,8 @@
 			this.picker = $('<div class="slider">'+
 								'<div class="slider-track">'+
 									'<div class="slider-selection"></div>'+
-									'<div class="slider-handle min-slider-handle"></div>'+
-									'<div class="slider-handle max-slider-handle"></div>'+
+									'<div class="slider-handle"></div>'+
+									'<div class="slider-handle"></div>'+
 								'</div>'+
 								'<div id="tooltip" class="tooltip"><div class="tooltip-arrow"></div><div class="tooltip-inner"></div></div>'+
 								'<div id="tooltip_min" class="tooltip"><div class="tooltip-arrow"></div><div class="tooltip-inner"></div></div>'+
@@ -106,23 +123,16 @@
 		}
 
 		var self = this;
-		$.each(['min',
-				'max',
-				'step',
-				'precision',
-				'value',
-				'reversed',
-				'handle'
-			], function(i, attr) {
-				if (typeof el.data('slider-' + attr) !== 'undefined') {
-					self[attr] = el.data('slider-' + attr);
-				} else if (typeof options[attr] !== 'undefined') {
-					self[attr] = options[attr];
-				} else if (typeof el.prop(attr) !== 'undefined') {
-					self[attr] = el.prop(attr);
-				} else {
-					self[attr] = 0; // to prevent empty string issues in calculations in IE
-				}
+		$.each(['min', 'max', 'step', 'value'], function(i, attr) {
+			if (typeof el.data('slider-' + attr) !== 'undefined') {
+				self[attr] = el.data('slider-' + attr);
+			} else if (typeof options[attr] !== 'undefined') {
+				self[attr] = options[attr];
+			} else if (typeof el.prop(attr) !== 'undefined') {
+				self[attr] = el.prop(attr);
+			} else {
+				self[attr] = 0; // to prevent empty string issues in calculations in IE
+			}
 		});
 
 		if (this.value instanceof Array) {
@@ -156,24 +166,58 @@
 			this.handle2.removeClass('round triangle hide');
 		}
 
-		var availableHandleModifiers = ['round', 'triangle', 'custom'];
-		if (availableHandleModifiers.indexOf(this.handle) !== -1){
-			this.handle1.addClass(this.handle);
-			this.handle2.addClass(this.handle);
+		var handle = this.element.data('slider-handle')||options.handle;
+		switch(handle) {
+			case 'round':
+				this.handle1.addClass('round');
+				this.handle2.addClass('round');
+				break;
+			case 'triangle':
+				this.handle1.addClass('triangle');
+				this.handle2.addClass('triangle');
+				break;
+		}
+
+		if (this.range) {
+			this.value[0] = Math.max(this.min, Math.min(this.max, this.value[0]));
+			this.value[1] = Math.max(this.min, Math.min(this.max, this.value[1]));
+		} else {
+			this.value = [ Math.max(this.min, Math.min(this.max, this.value))];
+			this.handle2.addClass('hide');
+			if (this.selection === 'after') {
+				this.value[1] = this.max;
+			} else {
+				this.value[1] = this.min;
+			}
+		}
+		this.diff = this.max - this.min;
+
+		if (this.diff > 0) {
+			this.percentage = [
+				(this.value[0] - this.min) * 100 / this.diff,
+				(this.value[1] - this.min) * 100 / this.diff,
+				this.step * 100 / this.diff
+			];
+		} else {
+			this.percentage = [0, 0, 100];
 		}
 
 		this.offset = this.picker.offset();
 		this.size = this.picker[0][this.sizePos];
+
 		this.formater = options.formater;
-		
 		this.tooltip_separator = options.tooltip_separator;
 		this.tooltip_split = options.tooltip_split;
 
-		this.setValue(this.value);
+		this.reversed = this.element.data('slider-reversed')||options.reversed;
+
+		this.layout();
+		this.layout();
 
 		this.handle1.on({
 			keydown: $.proxy(this.keydown, this, 0)
 		});
+
 		this.handle2.on({
 			keydown: $.proxy(this.keydown, this, 1)
 		});
@@ -218,7 +262,6 @@
 		} else {
 			this.disable();
 		}
-		this.natural_arrow_keys = this.element.data('slider-natural_arrow_keys') || options.natural_arrow_keys;
 	};
 
 	Slider.prototype = {
@@ -228,12 +271,12 @@
 		inDrag: false,
 
 		showTooltip: function(){
-            if (this.tooltip_split === false ){
-                this.tooltip.addClass('in');
-            } else {
-                this.tooltip_min.addClass('in');
-                this.tooltip_max.addClass('in');
-            }
+						if (this.tooltip_split === false ){
+								this.tooltip.addClass('in');
+						} else {
+								this.tooltip_min.addClass('in');
+								this.tooltip_max.addClass('in');
+						}
 
 			this.over = true;
 		},
@@ -266,63 +309,39 @@
 				this.selectionElStyle.left = Math.min(positionPercentages[0], positionPercentages[1]) +'%';
 				this.selectionElStyle.width = Math.abs(positionPercentages[0] - positionPercentages[1]) +'%';
 
-                var offset_min = this.tooltip_min[0].getBoundingClientRect();
-                var offset_max = this.tooltip_max[0].getBoundingClientRect();
+								var offset_min = this.tooltip_min[0].getBoundingClientRect();
+								var offset_max = this.tooltip_max[0].getBoundingClientRect();
 
-                if (offset_min.right > offset_max.left) {
-                    this.tooltip_max.removeClass('top');
-                    this.tooltip_max.addClass('bottom')[0].style.top = 18 + 'px';
-                } else {
-                    this.tooltip_max.removeClass('bottom');
-                    this.tooltip_max.addClass('top')[0].style.top = -30 + 'px';
-                }
+								if (offset_min.right > offset_max.left) {
+										this.tooltip_max.removeClass('top');
+										this.tooltip_max.addClass('bottom')[0].style.top = 18 + 'px';
+								} else {
+										this.tooltip_max.removeClass('bottom');
+										this.tooltip_max.addClass('top')[0].style.top = -30 + 'px';
+								}
 			}
 
 			if (this.range) {
 				this.tooltipInner.text(
 					this.formater(this.value[0]) + this.tooltip_separator + this.formater(this.value[1])
 				);
-				this.tooltip[0].style[this.stylePos] = (positionPercentages[1] + positionPercentages[0])/2 + '%';
-				if (this.orientation === 'vertical') {
-					this.tooltip.css('margin-top', -this.tooltip.outerHeight() / 2 + 'px');
-				} else {
-					this.tooltip.css('margin-left', -this.tooltip.outerWidth() / 2 + 'px');
-				}
-				
-				if (this.orientation === 'vertical') {
-					this.tooltip.css('margin-top', -this.tooltip.outerHeight() / 2 + 'px');
-				} else {
-					this.tooltip.css('margin-left', -this.tooltip.outerWidth() / 2 + 'px');
-				}
-				this.tooltipInner_min.text(
+				this.tooltip[0].style[this.stylePos] = this.size * (positionPercentages[0] + (positionPercentages[1] - positionPercentages[0])/2)/100 - (this.orientation === 'vertical' ? this.tooltip.outerHeight()/2 : this.tooltip.outerWidth()/2) +'px';
+
+								this.tooltipInner_min.text(
 					this.formater(this.value[0])
 				);
-				this.tooltipInner_max.text(
+								this.tooltipInner_max.text(
 					this.formater(this.value[1])
 				);
 
-				this.tooltip_min[0].style[this.stylePos] = positionPercentages[0] + '%';
-				if (this.orientation === 'vertical') {
-					this.tooltip_min.css('margin-top', -this.tooltip_min.outerHeight() / 2 + 'px');
-				} else {
-					this.tooltip_min.css('margin-left', -this.tooltip_min.outerWidth() / 2 + 'px');
-				}
-				this.tooltip_max[0].style[this.stylePos] = positionPercentages[1] + '%';
-				if (this.orientation === 'vertical') {
-					this.tooltip_max.css('margin-top', -this.tooltip_max.outerHeight() / 2 + 'px');
-				} else {
-					this.tooltip_max.css('margin-left', -this.tooltip_max.outerWidth() / 2 + 'px');
-				}
+				this.tooltip_min[0].style[this.stylePos] = this.size * ( (positionPercentages[0])/100) - (this.orientation === 'vertical' ? this.tooltip_min.outerHeight()/2 : this.tooltip_min.outerWidth()/2) +'px';
+				this.tooltip_max[0].style[this.stylePos] = this.size * ( (positionPercentages[1])/100) - (this.orientation === 'vertical' ? this.tooltip_max.outerHeight()/2 : this.tooltip_max.outerWidth()/2) +'px';
+
 			} else {
 				this.tooltipInner.text(
 					this.formater(this.value[0])
 				);
-				this.tooltip[0].style[this.stylePos] = positionPercentages[0] + '%';
-				if (this.orientation === 'vertical') {
-					this.tooltip.css('margin-top', -this.tooltip.outerHeight() / 2 + 'px');
-				} else {
-					this.tooltip.css('margin-left', -this.tooltip.outerWidth() / 2 + 'px');
-				}
+				this.tooltip[0].style[this.stylePos] = this.size * positionPercentages[0]/100 - (this.orientation === 'vertical' ? this.tooltip.outerHeight()/2 : this.tooltip.outerWidth()/2) +'px';
 			}
 		},
 
@@ -368,13 +387,13 @@
 
 			this.inDrag = true;
 			var val = this.calculateValue();
+			this.setValue(val, ev);
 			this.element.trigger({
 					type: 'slideStart',
 					value: val
 				})
 				.data('value', val)
 				.prop('value', val);
-			this.setValue(val);
 			return true;
 		},
 
@@ -407,13 +426,6 @@
 				return;
 			}
 
-			// use natural arrow keys instead of from min to max
-			if (this.natural_arrow_keys) {
-				if ((this.orientation === 'vertical' && !this.reversed) || (this.orientation === 'horizontal' && this.reversed)) {
-					dir = dir * -1;
-				}
-			}
-
 			var oneStepValuePercentageChange = dir * this.percentage[2];
 			var percentage = this.percentage[handleIdx] + oneStepValuePercentageChange;
 
@@ -429,16 +441,7 @@
 			this.layout();
 
 			var val = this.calculateValue();
-			
-			this.element.trigger({
-					type: 'slideStart',
-					value: val
-				})
-				.data('value', val)
-				.prop('value', val);
-
-			this.setValue(val, true);
-
+			this.setValue(val, ev);
 			this.element
 				.trigger({
 					type: 'slideStop',
@@ -464,10 +467,10 @@
 			this.layout();
 
 			var val = this.calculateValue();
-			this.setValue(val, true);
-
+			this.setValue(val, ev);
 			return false;
 		},
+
 		adjustPercentageForRangeSliders: function(percentage) {
 			if (this.range) {
 				if (this.dragged === 0 && this.percentage[1] < percentage) {
@@ -485,13 +488,13 @@
 				return false;
 			}
 			if (this.touchCapable) {
-				// Touch: Unbind touch event handlers:
+				// Touch: Bind touch events:
 				$(document).off({
 					touchmove: this.mousemove,
 					touchend: this.mouseup
 				});
 			}
-			// Unbind mouse event handlers:
+			// Bind mouse events:
 			$(document).off({
 				mousemove: this.mousemove,
 				mouseup: this.mouseup
@@ -517,14 +520,12 @@
 			var val;
 			if (this.range) {
 				val = [this.min,this.max];
-                if (this.percentage[0] !== 0){
-                    val[0] = (Math.max(this.min, this.min + Math.round((this.diff * this.percentage[0]/100)/this.step)*this.step));
-                    val[0] = this.applyPrecision(val[0]);
-                }
-                if (this.percentage[1] !== 100){
-                    val[1] = (Math.min(this.max, this.min + Math.round((this.diff * this.percentage[1]/100)/this.step)*this.step));
-                    val[1] = this.applyPrecision(val[1]);
-                }
+								if (this.percentage[0] !== 0){
+										val[0] = (Math.max(this.min, this.min + Math.round((this.diff * this.percentage[0]/100)/this.step)*this.step));
+								}
+								if (this.percentage[1] !== 100){
+										val[1] = (Math.min(this.max, this.min + Math.round((this.diff * this.percentage[1]/100)/this.step)*this.step));
+								}
 				this.value = val;
 			} else {
 				val = (this.min + Math.round((this.diff * this.percentage[0]/100)/this.step)*this.step);
@@ -535,28 +536,9 @@
 					val = this.max;
 				}
 				val = parseFloat(val);
-				val = this.applyPrecision(val);
 				this.value = [val, this.value[1]];
 			}
 			return val;
-		},
-		applyPrecision: function(val) {
-			var precision = this.precision || this.getNumDigitsAfterDecimalPlace(this.step);
-			return this.applyToFixedAndParseFloat(val, precision);
-		},
-		/*
-			Credits to Mike Samuel for the following method!
-			Source: http://stackoverflow.com/questions/10454518/javascript-how-to-retrieve-the-number-of-decimals-of-a-string-number
-		*/
-		getNumDigitsAfterDecimalPlace: function(num) {
-			var match = (''+num).match(/(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/);
-			if (!match) { return 0; }
-			return Math.max(0, (match[1] ? match[1].length : 0) - (match[2] ? +match[2] : 0));
-		},
-
-		applyToFixedAndParseFloat: function(num, toFixedInput) {
-			var truncatedNum = num.toFixed(toFixedInput);
-			return parseFloat(truncatedNum);
 		},
 
 		getPercentage: function(ev) {
@@ -575,20 +557,18 @@
 			return this.value[0];
 		},
 
-		setValue: function(val, triggerSlideEvent) {
+		setValue: function(val, originalEvent) {
+
 			if (!val) {
 				val = 0;
 			}
+
 			this.value = this.validateInputValue(val);
 
 			if (this.range) {
-				this.value[0] = this.applyPrecision(this.value[0]);
-				this.value[1] = this.applyPrecision(this.value[1]); 
-
 				this.value[0] = Math.max(this.min, Math.min(this.max, this.value[0]));
 				this.value[1] = Math.max(this.min, Math.min(this.max, this.value[1]));
 			} else {
-				this.value = this.applyPrecision(this.value);
 				this.value = [ Math.max(this.min, Math.min(this.max, this.value))];
 				this.handle2.addClass('hide');
 				if (this.selection === 'after') {
@@ -597,8 +577,9 @@
 					this.value[1] = this.min;
 				}
 			}
-
 			this.diff = this.max - this.min;
+
+
 			if (this.diff > 0) {
 				this.percentage = [
 					(this.value[0] - this.min) * 100 / this.diff,
@@ -611,16 +592,18 @@
 
 			this.layout();
 
-
-			if(triggerSlideEvent === true) {
-				var slideEventValue = this.range ? this.value : this.value[0];
+			var slideEventValue = this.range ? this.value : this.value[0];
+			this.element
+				.prop('value', JSON.stringify(slideEventValue))
+				.data('value', this.value);
+			if (originalEvent) {
 				this.element
 					.trigger({
 						'type': 'slide',
-						'value': slideEventValue
-					})
-					.data('value', slideEventValue)
-					.prop('value', slideEventValue);
+						'value': slideEventValue,
+						'originalEvent': originalEvent
+					});
+				this.element.trigger('change');
 			}
 		},
 
@@ -641,6 +624,7 @@
 			this.element.off().show().insertBefore(this.picker);
 			this.picker.off().remove();
 			$(this.element).removeData('slider');
+			$(this.element).off('val-change');
 		},
 
 		disable: function() {
@@ -738,10 +722,6 @@
 			if (slider && !options) {
 				options = {};
 
-				slider.handle1.off();
-				slider.handle2.off();
-				slider.picker.off();
-
 				$.each($.fn.slider.defaults, function(key) {
 					options[key] = slider[key];
 				});
@@ -756,7 +736,6 @@
 		min: 0,
 		max: 10,
 		step: 1,
-		precision: 0,
 		orientation: 'horizontal',
 		value: 5,
 		range: false,
@@ -764,7 +743,6 @@
 		tooltip: 'show',
 		tooltip_separator: ':',
 		tooltip_split: false,
-		natural_arrow_keys: false,
 		handle: 'round',
 		reversed : false,
 		enabled: true,

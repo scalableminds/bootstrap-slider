@@ -1,5 +1,5 @@
 {
-  "name": "seiyria-bootstrap-slider",
+  "name": "bootstrap-slider",
   "version": "3.1.0",
   "dependencies": {
     "jquery": "",
@@ -7,7 +7,7 @@
     "modernizr": "",
     "jquery-bridget": ""
   },
-  "homepage": "https://github.com/seiyria/bootstrap-slider",
+  "homepage": "https://github.com/scalableminds/bootstrap-slider",
   "authors": [
     "Kyle Kemp <kyle@seiyria.com>",
     "Rohit Kalkur <rohit.kalkur@gmail.com>"
